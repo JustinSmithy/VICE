@@ -3750,29 +3750,29 @@ $('status-check-btn').addEventListener('click', async () => {
   $('status-check-btn').disabled = true;
   $('status-check-btn').textContent = 'Checking…';
 
-  // Search by discord (stored in 'name' column) or character name
   const handle = discord.replace(/^@/, '').toLowerCase();
-  // Try discord handle (stored in 'name') first, then char name
-  let { data: apps, error } = await db().from('applications')
-    .select('*').ilike('name', '%' + handle + '%')
-    .order('created_at', {ascending: false}).limit(1);
-  if (!error && !apps?.length) {
-    const res2 = await db().from('applications')
-      .select('*').ilike('char_name', '%' + handle + '%')
-      .order('created_at', {ascending: false}).limit(1);
-    apps = res2.data; error = res2.error;
+
+  // Look up status via the bridge (which returns only non-sensitive
+  // fields). We never query the applications table directly from the
+  // public page - that would expose everyone's data.
+  let app = null, error = null;
+  try {
+    const resp = await fetch('https://vice-unit-bridge.onrender.com/application/status?q=' + encodeURIComponent(handle));
+    const json = await resp.json();
+    if (json.ok && json.found) app = json.application;
+    else if (!json.ok) error = json.error || 'lookup failed';
+  } catch(e) {
+    error = 'Could not reach the server. Please try again in a moment.';
   }
 
   $('status-check-btn').disabled = false;
   $('status-check-btn').textContent = 'Check Status';
 
-  if (error) { showMsg('status-msg', 'Error: '+error.message, 'err'); return; }
-  if (!apps?.length) {
-    showMsg('status-msg', 'No application found. Double-check the Discord handle you used when applying. If you\'re sure it\'s correct, the unit\'s database may need to be configured to allow public lookups (ask an admin to check the applications table RLS policy in Supabase).', 'err');
+  if (error) { showMsg('status-msg', 'Error: ' + error, 'err'); return; }
+  if (!app) {
+    showMsg('status-msg', 'No application found. Double-check the Discord handle you used when applying.', 'err');
     return;
   }
-
-  const app = apps[0];
   const statusColour = app.status === 'approved' ? '#6adba0' : app.status === 'rejected' ? '#f08080' : 'var(--gold)';
   const statusLabel  = app.status === 'approved' ? '✅ Approved' : app.status === 'rejected' ? '❌ Rejected' : app.status === 'reviewed' ? '🚔 Ride Along Stage' : '⏳ Pending Review';
 
