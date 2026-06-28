@@ -4947,8 +4947,12 @@ async function loadOps() {
 }
 
 async function markAttendance(signupId, attended) {
-  const { error } = await db().from('briefing_signups').update({ attended }).eq('id', signupId);
+  const { data, error } = await db().from('briefing_signups').update({ attended }).eq('id', signupId).select();
   if (error) { alert('Error: ' + error.message); return; }
+  if (!data || !data.length) {
+    alert('Attendance was not saved — the database rejected the update. Run SQL migration 015 (signups update policy).');
+    return;
+  }
   // Refresh the modal content
   const overlay = $('briefing-modal-overlay');
   const card = document.querySelector(`[data-briefing-id]`);
