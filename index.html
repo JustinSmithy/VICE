@@ -1822,14 +1822,18 @@ $('reg-btn').addEventListener('click', async () => {
   if (pass.length < 8) return showMsg('auth-msg','Password min 8 characters.','err');
   if (pass !== pass2)  return showMsg('auth-msg','Passwords do not match.','err');
 
-  // Check if this email has a rejected application — block registration
+  // Check if this email has a rejected application — block registration.
+  // Done via the bridge (returns only a boolean) so the applications
+  // table can stay locked to admins only.
   $('reg-btn').disabled = true; $('reg-btn').textContent = 'Checking…';
-  const { data: appCheck } = await db().from('applications')
-    .select('status').ilike('backstory', `Email: ${email}%`).eq('status','rejected').limit(1);
-  if (appCheck?.length) {
-    $('reg-btn').disabled=false; $('reg-btn').textContent='Create Account';
-    return showMsg('auth-msg','Your application was not approved. Contact an admin if you believe this is an error.','err');
-  }
+  try {
+    const rc = await fetch('https://vice-unit-bridge.onrender.com/application/rejected-check?email=' + encodeURIComponent(email));
+    const rcJson = await rc.json();
+    if (rcJson.ok && rcJson.rejected) {
+      $('reg-btn').disabled=false; $('reg-btn').textContent='Create Account';
+      return showMsg('auth-msg','Your application was not approved. Contact an admin if you believe this is an error.','err');
+    }
+  } catch(e) { /* bridge offline — allow registration to proceed */ }
 
   $('reg-btn').textContent = 'Creating…';
   const { data, error } = await db().auth.signUp({ email, password: pass });
@@ -4158,14 +4162,16 @@ async function loadUsers() {
   list.appendChild(frag);
 }
 async function removeOfficer(id, name) {
-  if (!confirm(`Remove ${name}? This will delete their account so they can re-register.`)) return;
-  // Delete officer row from DB
+  if (!confirm(`Remove ${name}? This deletes their officer record.\n\nNote: to let them re-register with the same email, you must ALSO delete their account in Supabase → Authentication → Users.`)) return;
+  // Delete officer row from DB (admin-only via RLS)
   const { error } = await db().from('officers').delete().eq('id', id);
   if (error) { alert('Error: ' + error.message); return; }
-  // Delete their Supabase auth account via bridge so they can re-register with same email
-  try {
-    await fetch(`https://vice-unit-bridge.onrender.com/officer/auth/delete?token=${BRIDGE_TOKEN}&uid=${id}`);
-  } catch(e) { /* bridge offline — officer row deleted but auth user may still exist */ }
+  // NOTE: the Supabase Auth user is intentionally NOT deleted from here.
+  // Doing so would require the bridge admin token in client-side code,
+  // which would expose it to anyone viewing the page source. To free up
+  // the email for re-registration, delete the user manually in
+  // Supabase → Authentication → Users.
+  alert(`${name}'s officer record was removed.\n\nIf they need to re-register with the same email, delete their account in Supabase → Authentication → Users.`);
   loadUsers();
 }
 async function verifyOfficer(id,name) { if(!confirm(`Verify ${name}?`))return; await db().from('officers').update({verified:true}).eq('id',id); loadUsers(); }
