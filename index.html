@@ -5038,6 +5038,11 @@ const ACTIVITY_WEIGHTS = {
   operation: 25,  // attending a planned operation
   assist:     6,  // assisting on another officer's seizure
   dispatch:   3,  // each dispatch/radio call
+  // Bonuses (reward thorough documentation & bigger busts)
+  evidenceItem:   2,   // per evidence type on an arrestee (mugshot / DNA / fingerprints)
+  bigSeizure:    10,   // 100g+ of a single drug in one log
+  hugeSeizure:   20,   // 250g+ of a single drug (replaces bigSeizure, not stacked)
+  weaponSet:     15,   // 4+ distinct firearms in one log
 };
 
 async function loadActivity(days) {
@@ -5061,7 +5066,7 @@ async function loadActivity(days) {
   if (!offs?.length) { tbl.innerHTML = '<div style="color:var(--ts)">No officers found.</div>'; return; }
 
   // Fetch logs, dispatch, and operation attendance in the period
-  let logsQ = db().from('seizure_logs').select('officer_id,arrests,assisting_officers,points_withheld,created_at');
+  let logsQ = db().from('seizure_logs').select('id,officer_id,arrests,assisting_officers,points_withheld,drug,qty,unit,firearm_detail,created_at');
   let dispQ = db().from('dispatch_calls').select('officer_id,created_at');
   if (since) { logsQ = logsQ.gte('created_at', since); dispQ = dispQ.gte('created_at', since); }
 
@@ -5076,9 +5081,24 @@ async function loadActivity(days) {
 
   const [{ data: logs }, { data: disp }] = await Promise.all([logsQ, dispQ]);
 
+  // Fetch arrestee documentation (mugshot / DNA / fingerprints) for the
+  // logs in scope, so we can award documentation bonuses.
+  const logIds = (logs || []).map(l => l.id);
+  let arrByLog = {};
+  if (logIds.length) {
+    try {
+      const { data: arr } = await db().from('log_arrestees')
+        .select('log_id,evidence,dna,fingerprints,suspect_id')
+        .in('log_id', logIds);
+      (arr || []).forEach(a => {
+        (arrByLog[a.log_id] = arrByLog[a.log_id] || []).push(a);
+      });
+    } catch(e) { arrByLog = {}; }
+  }
+
   // Aggregate per officer
   const stats = {};
-  offs.forEach(o => { stats[o.id] = { officer: o, logs: 0, arrests: 0, dispatch: 0, operations: 0, assists: 0, lastActive: null }; });
+  offs.forEach(o => { stats[o.id] = { officer: o, logs: 0, arrests: 0, dispatch: 0, operations: 0, assists: 0, bonus: 0, lastActive: null }; });
   const touch = (id, when) => { if (stats[id] && (!stats[id].lastActive || when > stats[id].lastActive)) stats[id].lastActive = when; };
 
   (logs||[]).forEach(l => {
@@ -5087,6 +5107,38 @@ async function loadActivity(days) {
       stats[l.officer_id].logs++;
       stats[l.officer_id].arrests += Number(l.arrests)||0;
       touch(l.officer_id, l.created_at);
+
+      // ── BONUSES (logging officer only) ──
+      let bonus = 0;
+
+      // Large drug seizure: convert qty to grams, check thresholds
+      if (l.drug && l.qty) {
+        const q = Number(l.qty) || 0;
+        const grams = l.unit === 'kilograms' ? q*1000 : l.unit === 'ounces' ? q*28.3 : q;
+        if (grams >= 250)      bonus += ACTIVITY_WEIGHTS.hugeSeizure;
+        else if (grams >= 100) bonus += ACTIVITY_WEIGHTS.bigSeizure;
+      }
+
+      // Full weapon set: 4+ distinct firearms in the firearm_detail string
+      if (l.firearm_detail) {
+        const distinct = new Set(
+          l.firearm_detail.split(',').map(p => p.trim().replace(/\s*x\s*\d+$/i, '').trim().toLowerCase()).filter(Boolean)
+        );
+        if (distinct.size >= 4) bonus += ACTIVITY_WEIGHTS.weaponSet;
+      }
+
+      // Documentation: +2 per evidence type (mugshot via suspect_id, DNA, prints)
+      // across all arrestees on this log
+      (arrByLog[l.id] || []).forEach(a => {
+        const hasEvidence = a.evidence && a.evidence.trim() && a.evidence.trim() !== '-';
+        const hasMug = !!a.suspect_id;
+        if (hasEvidence) bonus += ACTIVITY_WEIGHTS.evidenceItem;
+        if (hasMug)      bonus += ACTIVITY_WEIGHTS.evidenceItem;
+        if (a.dna)         bonus += ACTIVITY_WEIGHTS.evidenceItem;
+        if (a.fingerprints) bonus += ACTIVITY_WEIGHTS.evidenceItem;
+      });
+
+      stats[l.officer_id].bonus += bonus;
     }
     // Credit assisting officers — match their name within the free-text field
     if (l.assisting_officers) {
@@ -5118,7 +5170,8 @@ async function loadActivity(days) {
             + s.arrests    * ACTIVITY_WEIGHTS.arrest
             + s.operations * ACTIVITY_WEIGHTS.operation
             + s.assists    * ACTIVITY_WEIGHTS.assist
-            + s.dispatch   * ACTIVITY_WEIGHTS.dispatch;
+            + s.dispatch   * ACTIVITY_WEIGHTS.dispatch
+            + (s.bonus || 0);
   });
 
   const sorted = Object.values(stats).sort((a,b) => b.score - a.score);
@@ -5137,6 +5190,11 @@ async function loadActivity(days) {
       Seizure log <strong style="color:#6adba0">+${ACTIVITY_WEIGHTS.log}</strong> ·
       Assist <strong style="color:#c89bff">+${ACTIVITY_WEIGHTS.assist}</strong> ·
       Dispatch call <strong style="color:#7ab8ff">+${ACTIVITY_WEIGHTS.dispatch}</strong>
+      <br><span style="color:var(--ts)">Bonuses:</span>
+      Evidence/DNA/prints <strong style="color:#e0a0d0">+${ACTIVITY_WEIGHTS.evidenceItem}</strong> each ·
+      100g+ seizure <strong style="color:#e0a0d0">+${ACTIVITY_WEIGHTS.bigSeizure}</strong> ·
+      250g+ <strong style="color:#e0a0d0">+${ACTIVITY_WEIGHTS.hugeSeizure}</strong> ·
+      4+ firearm set <strong style="color:#e0a0d0">+${ACTIVITY_WEIGHTS.weaponSet}</strong>
     </div>
     <div style="overflow-x:auto">
       <table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -5150,6 +5208,7 @@ async function loadActivity(days) {
             <th style="padding:8px 12px;text-align:center">Arrests</th>
             <th style="padding:8px 12px;text-align:center">Logs</th>
             <th style="padding:8px 12px;text-align:center">Assists</th>
+            <th style="padding:8px 12px;text-align:center">Bonus</th>
             <th style="padding:8px 12px;text-align:center">Calls</th>
             <th style="padding:8px 12px;text-align:left">Last Active</th>
           </tr>
@@ -5171,6 +5230,7 @@ async function loadActivity(days) {
               <td style="padding:10px 12px;text-align:center">${s.arrests ? '<span style="color:#f55;font-weight:700">'+s.arrests+'</span>' : '<span style="color:var(--ts)">0</span>'}</td>
               <td style="padding:10px 12px;text-align:center">${s.logs ? '<span style="color:#6adba0;font-weight:700">'+s.logs+'</span>' : '<span style="color:var(--ts)">0</span>'}</td>
               <td style="padding:10px 12px;text-align:center">${s.assists ? '<span style="color:#c89bff;font-weight:700">'+s.assists+'</span>' : '<span style="color:var(--ts)">0</span>'}</td>
+              <td style="padding:10px 12px;text-align:center">${s.bonus ? '<span style="color:#e0a0d0;font-weight:700">+'+s.bonus+'</span>' : '<span style="color:var(--ts)">0</span>'}</td>
               <td style="padding:10px 12px;text-align:center">${s.dispatch ? '<span style="color:#7ab8ff;font-weight:700">'+s.dispatch+'</span>' : '<span style="color:var(--ts)">0</span>'}</td>
               <td style="padding:10px 12px;color:var(--ts);font-size:12px">${s.lastActive ? fmtDate(s.lastActive) : '<span style="color:#f44">No activity</span>'}</td>
             </tr>`;
@@ -5206,7 +5266,7 @@ async function openOfficerProfile(officerId) {
 
   // Fetch their logs, dispatch calls, and operation attendance in parallel
   const [logsRes, dispRes, opsRes, notesRes, assistRes] = await Promise.all([
-    db().from('seizure_logs').select('id,log_type,value,arrests,location,points_withheld,created_at').eq('officer_id', officerId).order('created_at',{ascending:false}),
+    db().from('seizure_logs').select('id,log_type,value,arrests,location,points_withheld,drug,qty,unit,firearm_detail,created_at').eq('officer_id', officerId).order('created_at',{ascending:false}),
     db().from('dispatch_calls').select('id,created_at').eq('officer_id', officerId),
     db().from('briefing_signups').select('attended').eq('officer_id', officerId).eq('attended', true).then(r=>r).catch(()=>({data:[]})),
     db().from('officer_notes').select('*').eq('officer_id', officerId).order('created_at',{ascending:false}).then(r=>r).catch(()=>({data:[]})),
@@ -5229,8 +5289,36 @@ async function openOfficerProfile(officerId) {
   const scoreLogs    = logs.filter(l => l.points_withheld !== true);
   const scoredLogCount = scoreLogs.length;
   const scoredArrests  = scoreLogs.reduce((s,l)=>s+(Number(l.arrests)||0),0);
+  // Bonus points (large seizures + weapon sets) from non-withheld logs.
+  // Documentation bonuses need arrestee data; fetch it for these logs.
+  let profBonus = 0;
+  scoreLogs.forEach(l => {
+    if (l.drug && l.qty) {
+      const q = Number(l.qty)||0;
+      const grams = l.unit==='kilograms'?q*1000:l.unit==='ounces'?q*28.3:q;
+      if (grams>=250) profBonus += ACTIVITY_WEIGHTS.hugeSeizure;
+      else if (grams>=100) profBonus += ACTIVITY_WEIGHTS.bigSeizure;
+    }
+    if (l.firearm_detail) {
+      const distinct = new Set(l.firearm_detail.split(',').map(p=>p.trim().replace(/\s*x\s*\d+$/i,'').trim().toLowerCase()).filter(Boolean));
+      if (distinct.size>=4) profBonus += ACTIVITY_WEIGHTS.weaponSet;
+    }
+  });
+  try {
+    const sIds = scoreLogs.map(l=>l.id);
+    if (sIds.length) {
+      const { data: arr } = await db().from('log_arrestees').select('log_id,evidence,dna,fingerprints,suspect_id').in('log_id', sIds);
+      (arr||[]).forEach(a => {
+        if (a.evidence && a.evidence.trim() && a.evidence.trim()!=='-') profBonus += ACTIVITY_WEIGHTS.evidenceItem;
+        if (a.suspect_id)  profBonus += ACTIVITY_WEIGHTS.evidenceItem;
+        if (a.dna)         profBonus += ACTIVITY_WEIGHTS.evidenceItem;
+        if (a.fingerprints) profBonus += ACTIVITY_WEIGHTS.evidenceItem;
+      });
+    }
+  } catch(e) {}
   const score = scoredLogCount*ACTIVITY_WEIGHTS.log + scoredArrests*ACTIVITY_WEIGHTS.arrest
-              + opsAttended*ACTIVITY_WEIGHTS.operation + totalAssists*ACTIVITY_WEIGHTS.assist + totalDisp*ACTIVITY_WEIGHTS.dispatch;
+              + opsAttended*ACTIVITY_WEIGHTS.operation + totalAssists*ACTIVITY_WEIGHTS.assist + totalDisp*ACTIVITY_WEIGHTS.dispatch
+              + profBonus;
 
   // Last active
   let lastActive = null;
