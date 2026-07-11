@@ -3052,6 +3052,15 @@ async function submitLog() {
     _suspectsCache = null;
   }
 
+  // Mirror this website-logged seizure to the LSPD public record.
+  // Fire-and-forget: calls Vice's worker, which reads the seizure by id
+  // and forwards it to PD (keeping the PD token server-side).
+  if (newLog?.id) {
+    try {
+      fetch('https://vice-unit.lspd-bridge.workers.dev/mirror-seizure?log_id=' + encodeURIComponent(newLog.id));
+    } catch (e) { /* PD mirror is best-effort; never blocks the Vice log */ }
+  }
+
   showMsg('add-log-msg','✅ Seizure log submitted!','ok');
   $('log-type').value = ''; $('log-value').value = ''; $('log-value').readOnly = false; $('log-value').style.opacity = ''; $('log-location').value = ''; $('log-notes').value = '';
   $('drug-rows').innerHTML = ''; $('firearm-rows').innerHTML = '';
