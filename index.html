@@ -1006,6 +1006,9 @@ textarea.fi{resize:vertical;min-height:80px}
               <option value="all">All officers</option>
               <option value="mine">My logs only</option>
             </select>
+            <select class="fi" id="logs-filter-charge" style="width:auto;min-width:170px">
+              <option value="">All charges</option>
+            </select>
           </div>
           <div id="logs-list"></div>
         </div>
@@ -1292,6 +1295,13 @@ textarea.fi{resize:vertical;min-height:80px}
             <h4>📍 Hotspot Analysis</h4>
             <div style="color:var(--ts);font-size:12px;margin:-4px 0 1rem">Seizure activity by location — where enforcement is concentrating</div>
             <div id="hotspot-content"><div class="load-state"><span class="spinner"></span> Analysing hotspots…</div></div>
+          </div>
+
+          <!-- TOP CHARGES -->
+          <div class="map-card" style="margin-top:1.5rem;margin-bottom:0">
+            <h4>⚖️ Top Charges</h4>
+            <div style="color:var(--ts);font-size:12px;margin:-4px 0 1rem">Most frequently filed charges across all arrests</div>
+            <div id="charges-content"><div class="load-state"><span class="spinner"></span> Tallying charges…</div></div>
           </div>
         </div>
 
@@ -2107,7 +2117,11 @@ async function loadPublicStats() {
   $('pub-weight').textContent = totalDrugQty > 0 ? totalDrugQty + 'g' : '0g';
   $('pub-firearms').textContent = totalFA;
   $('pub-ops').textContent    = logs.length;
-  $('pub-rate').textContent   = logs.length&&totalArr ? Math.round((totalArr/logs.length)*100)+'%' : 'N/A';
+  // Arrest Rate = % of seizure logs that resulted in at least one arrest.
+  // (Previously divided total arrests by total logs, which could exceed
+  // 100% because one log can have multiple arrests.)
+  const logsWithArrest = logs.filter(l => (Number(l.arrests)||0) > 0).length;
+  $('pub-rate').textContent   = logs.length ? Math.round((logsWithArrest/logs.length)*100)+'%' : 'N/A';
 
   const { data: recent } = await db().from('seizure_logs').select('id,drug,firearm,qty,unit,value,arrests,location,created_at,log_type,drug_detail,firearm_detail').order('created_at',{ascending:false}).limit(20);
   // Check which logs have high-risk arrestees (6 charges)
@@ -2202,10 +2216,25 @@ function renderDashLogs() {
   const q        = ($('logs-search')?.value || '').trim().toLowerCase();
   const typeFilt = $('logs-filter-type')?.value || '';
   const mineFilt = $('logs-filter-mine')?.value || 'all';
+  const chargeFilt = $('logs-filter-charge')?.value || '';
+
+  // Populate the charge dropdown once (from CHARGES)
+  const chargeSel = $('logs-filter-charge');
+  if (chargeSel && chargeSel.options.length <= 1) {
+    CHARGES.forEach(c => {
+      const o = document.createElement('option'); o.value = c; o.textContent = c; chargeSel.appendChild(o);
+    });
+    chargeSel.value = chargeFilt; // preserve selection
+  }
 
   let filtered = logs;
   if (mineFilt === 'mine') filtered = filtered.filter(l => l.officer_id === me?.id);
   if (typeFilt)            filtered = filtered.filter(l => l.log_type === typeFilt);
+  if (chargeFilt) {
+    filtered = filtered.filter(l =>
+      (arrMap[l.id]||[]).some(a => (a.charges||'').toLowerCase().includes(chargeFilt.toLowerCase()))
+    );
+  }
   if (q) {
     filtered = filtered.filter(l => {
       const hay = [l.officer_name, l.officer_badge, l.location, l.drug, l.drug_detail, l.firearm, l.firearm_detail, l.notes, l.assisting_officers, 'log #'+l.id]
@@ -2812,8 +2841,33 @@ function makeChargeLine(removable) {
   const line = document.createElement('div');
   line.className = 'charge-line';
   line.style.flexDirection = 'column';
+
   const sel = makeSelect(CHARGES, 'charge-sel', '— Select charge —');
+
+  // Optional search box: type to filter the dropdown, or ignore it and
+  // scroll the select normally. Filtering only hides/shows <option>s, so
+  // the select's value and the conflict logic are unaffected.
+  const search = document.createElement('input');
+  search.className = 'fi charge-search';
+  search.type = 'text';
+  search.placeholder = '🔍 Type to filter charges…';
+  search.autocomplete = 'off';
+  search.style.cssText = 'margin-bottom:4px;font-size:12px;padding:6px 8px';
+  search.addEventListener('input', () => {
+    const q = search.value.trim().toLowerCase();
+    let firstMatch = '';
+    Array.from(sel.options).forEach(opt => {
+      if (!opt.value) return; // keep the placeholder
+      const match = opt.text.toLowerCase().includes(q);
+      opt.hidden = !!q && !match;
+      if (match && !firstMatch) firstMatch = opt.value;
+    });
+    // If exactly narrowing, jump the select to the first match for convenience
+    if (q && firstMatch) { sel.value = firstMatch; checkChargeConflicts(sel); }
+  });
+
   sel.addEventListener('change', () => checkChargeConflicts(sel));
+  line.appendChild(search);
   line.appendChild(sel);
   if (removable) line.appendChild(rmBtn(() => { line.remove(); checkChargeConflicts(sel); }));
   return line;
@@ -3311,6 +3365,39 @@ async function loadAnalytics() {
   });
 
   renderHotspots(logs, months);
+  renderTopCharges();
+}
+
+async function renderTopCharges() {
+  const box = $('charges-content');
+  if (!box) return;
+  try {
+    const { data: arr } = await db().from('log_arrestees').select('charges');
+    const counts = {};
+    (arr || []).forEach(a => {
+      if (!a.charges) return;
+      a.charges.split(',').map(c => c.trim()).filter(Boolean).forEach(c => {
+        counts[c] = (counts[c] || 0) + 1;
+      });
+    });
+    const ranked = Object.entries(counts).sort((a,b) => b[1]-a[1]).slice(0, 12);
+    if (!ranked.length) {
+      box.innerHTML = '<div style="color:var(--ts);font-size:13px">No charges filed yet.</div>';
+      return;
+    }
+    const max = ranked[0][1];
+    box.innerHTML = ranked.map(([charge, n], i) => {
+      const pct = Math.round((n/max)*100);
+      return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">'
+        + '<div style="width:20px;text-align:right;color:var(--ts);font-size:12px;font-weight:700">'+(i+1)+'</div>'
+        + '<div style="flex:1;min-width:0">'
+        + '<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px"><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escapeHTML(charge)+'</span><span style="color:var(--gold);font-weight:700;margin-left:8px">'+n+'</span></div>'
+        + '<div style="height:6px;background:var(--bg2);border-radius:3px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:var(--gold)"></div></div>'
+        + '</div></div>';
+    }).join('');
+  } catch(e) {
+    box.innerHTML = '<div style="color:var(--ts);font-size:13px">Could not load charge data.</div>';
+  }
 }
 
 // ── Hotspot analysis — aggregates seizures by location and surfaces patterns ──
@@ -4371,7 +4458,7 @@ document.addEventListener('DOMContentLoaded', () => {
     attachOfficerAutocomplete('log-assisting', 'log-assisting-ac');
   }
   // Seizure logs search/filter wiring
-  ['logs-search','logs-filter-type','logs-filter-mine'].forEach(id => {
+  ['logs-search','logs-filter-type','logs-filter-mine','logs-filter-charge'].forEach(id => {
     const elFilt = document.getElementById(id);
     if (elFilt) {
       const ev = id === 'logs-search' ? 'input' : 'change';
@@ -5552,7 +5639,7 @@ async function loadHomeWidget() {
   const [
     myLogs, allLogs, myArrestees,
     unreadMail, activeDispatch,
-    bulletins, recentLogs
+    bulletins, recentLogs, upcomingBriefings, mySignups
   ] = await Promise.all([
     safe(() => db().from('seizure_logs').select('id,value,arrests,created_at').eq('officer_id', me.id).gte('created_at', weekAgoISO)),
     safe(() => db().from('seizure_logs').select('id,value,arrests').gte('created_at', weekAgoISO)),
@@ -5564,6 +5651,8 @@ async function loadHomeWidget() {
     safe(() => db().from('dispatch_calls').select('id,code,details,officer_name,created_at').neq('status','resolved').order('created_at',{ascending:false}).limit(5)),
     safe(() => db().from('bulletins').select('*').order('pinned',{ascending:false}).order('created_at',{ascending:false}).limit(3)),
     safe(() => db().from('seizure_logs').select('id,drug,drug_detail,firearm,firearm_detail,log_type,location,created_at,value,arrests').order('created_at',{ascending:false}).limit(5)),
+    safe(() => db().from('mission_briefings').select('id,title,scheduled_at,status').in('status',['planned','active']).order('scheduled_at',{ascending:true}).limit(4)),
+    safe(() => db().from('briefing_signups').select('briefing_id').eq('officer_id', me.id)),
   ]);
 
   const myVal    = myLogs.reduce((s,l) => s+(Number(l.value)||0), 0);
@@ -5621,6 +5710,31 @@ async function loadHomeWidget() {
       html += `<div style="padding:10px 14px;border-bottom:1px solid var(--border-d);display:flex;justify-content:space-between;align-items:center">
         <div><span style="color:var(--gold);font-weight:700">${d.code}</span> <span style="color:var(--tp);font-size:13px">${d.details||'—'}</span></div>
         <div style="font-size:12px;color:var(--ts)">${d.officer_name}</div>
+      </div>`;
+    });
+    html += '</div></div>';
+  }
+
+  // ── Upcoming operations (sign up) ──────────────────────────────────────────
+  if (upcomingBriefings.length) {
+    const signedIds = new Set((mySignups||[]).map(s => s.briefing_id));
+    html += `<div style="margin-bottom:1.5rem">
+      <div style="font-size:11px;font-weight:700;letter-spacing:2px;color:var(--gold);margin-bottom:8px">📋 UPCOMING OPERATIONS <span style="font-size:10px;font-weight:400;color:var(--ts);cursor:pointer" onclick="document.querySelector('.sb-btn[data-tab=ops]').click()">→ Operations</span></div>
+      <div style="background:var(--bg2);border:1px solid var(--border-d);border-radius:8px;overflow:hidden">`;
+    upcomingBriefings.forEach(b => {
+      const signed = signedIds.has(b.id);
+      const when = b.scheduled_at ? new Date(b.scheduled_at).toLocaleString('en-GB',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : 'TBC';
+      const statusPill = b.status === 'active'
+        ? '<span style="font-size:10px;color:#6adba0;border:1px solid #6adba0;border-radius:10px;padding:1px 8px">ACTIVE</span>'
+        : '<span style="font-size:10px;color:#7ab8ff;border:1px solid #7ab8ff;border-radius:10px;padding:1px 8px">PLANNED</span>';
+      html += `<div style="padding:10px 14px;border-bottom:1px solid var(--border-d);display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:pointer" onclick="document.querySelector('.sb-btn[data-tab=ops]').click()">
+        <div style="min-width:0">
+          <div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHTML(b.title||'Operation')} ${statusPill}</div>
+          <div style="font-size:12px;color:var(--ts);margin-top:2px">🗓 ${when}</div>
+        </div>
+        <div style="flex-shrink:0">${signed
+          ? '<span style="font-size:11px;color:#6adba0;font-weight:700">✓ Signed up</span>'
+          : '<span style="font-size:11px;color:var(--gold);font-weight:700">Sign up →</span>'}</div>
       </div>`;
     });
     html += '</div></div>';
