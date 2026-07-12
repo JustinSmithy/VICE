@@ -9,9 +9,7 @@
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Segoe UI',system-ui,sans-serif;background:#0a0c0f;color:#e8eaf0;min-height:100vh;overflow-y:auto}
-.pfbg{position:fixed;inset:0;z-index:-1;background-size:cover;background-position:center;pointer-events:none;display:none;animation:kenBurns 25s ease-in-out infinite alternate;transform-origin:center center}
-@keyframes kenBurns{0%{transform:scale(1) translate(0,0)}100%{transform:scale(1.22) translate(-3%,-2%)}}
-@media(prefers-reduced-motion:reduce){.pfbg{animation:none}}
+.pfbg{position:fixed;inset:0;z-index:-1;background-size:cover;background-position:center;pointer-events:none;display:none}
 .pfbg::after{content:'';position:fixed;inset:0;background:rgba(10,12,15,.65);z-index:-1;pointer-events:none}
 :root{
   --gold:#c9a84c;--gold-l:#e8c96a;
