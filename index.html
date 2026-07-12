@@ -1275,6 +1275,7 @@ textarea.fi{resize:vertical;min-height:80px}
             <div class="sc"><div class="sc-lbl">📍 Top Area</div><div class="sc-val gold" id="st-area">—</div></div>
             <div class="sc"><div class="sc-lbl">🏅 Unit Rank</div><div class="sc-val gold" id="st-rank">—</div></div>
           </div>
+          <div id="st-recap" style="margin-top:1rem"></div>
           <div class="sec-hd" style="margin-top:1rem"><div class="tag">History</div><h2>My Recent Logs</h2></div>
           <div id="my-logs"></div>
         </div>
@@ -3396,6 +3397,47 @@ async function loadStats() {
   $('st-drugs').textContent    = drugLogs.length;
   $('st-topdrug').textContent  = topDrug;
   $('st-area').textContent     = topArea;
+
+  // ── MONTH IN REVIEW ──────────────────────────────────────────
+  const recapEl = $('st-recap');
+  if (recapEl) {
+    const now2 = new Date();
+    const monthStart = new Date(now2.getFullYear(), now2.getMonth(), 1).getTime();
+    const monthLogs = logs.filter(l => new Date(l.created_at).getTime() >= monthStart);
+    const monthName = now2.toLocaleDateString('en-GB', { month:'long', year:'numeric' });
+    if (!monthLogs.length) {
+      recapEl.innerHTML = `<div style="background:linear-gradient(135deg,rgba(201,168,76,.08),rgba(201,168,76,.02));border:1px solid var(--border-d);border-radius:12px;padding:1.25rem 1.5rem">
+        <div style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--gold);font-weight:700;margin-bottom:6px">📅 ${monthName} — Month in Review</div>
+        <div style="color:var(--ts);font-size:13px">No activity logged yet this month. Get out there and make some busts!</div>
+      </div>`;
+    } else {
+      const mVal = monthLogs.reduce((s,l)=>s+(Number(l.value)||0),0);
+      const mArr = monthLogs.reduce((s,l)=>s+(Number(l.arrests)||0),0);
+      const mGrams = monthLogs.reduce((s,l)=>{const q=Number(l.qty)||0;if(!l.drug)return s;return s+(l.unit==='kilograms'?q*1000:l.unit==='ounces'?q*28.3:q);},0);
+      const mBiggest = monthLogs.reduce((mx,l)=>Math.max(mx, Number(l.value)||0),0);
+      const mDrugCount = {}; monthLogs.forEach(l=>{if(l.drug)mDrugCount[l.drug]=(mDrugCount[l.drug]||0)+1;});
+      const mTopDrug = Object.entries(mDrugCount).sort((a,b)=>b[1]-a[1])[0]?.[0]||'—';
+      const mAreaCount = {}; monthLogs.forEach(l=>{const a=(l.location||'').split(',')[0].trim();if(a)mAreaCount[a]=(mAreaCount[a]||0)+1;});
+      const mTopArea = Object.entries(mAreaCount).sort((a,b)=>b[1]-a[1])[0]?.[0]||'—';
+
+      const cell = (val, lbl, col) => `<div style="text-align:center;padding:8px 4px"><div style="font-size:22px;font-weight:800;color:${col}">${val}</div><div style="font-size:11px;color:var(--ts);margin-top:2px">${lbl}</div></div>`;
+      recapEl.innerHTML = `<div style="background:linear-gradient(135deg,rgba(201,168,76,.10),rgba(201,168,76,.02));border:1px solid rgba(201,168,76,.3);border-radius:12px;padding:1.25rem 1.5rem">
+        <div style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--gold);font-weight:700;margin-bottom:12px">📅 ${monthName} — Your Month in Review</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:6px;margin-bottom:12px">
+          ${cell(monthLogs.length, 'Seizures', 'var(--gold)')}
+          ${cell(mArr, 'Arrests', '#f55')}
+          ${cell(fmtVal(mVal), 'Value', '#6adba0')}
+          ${cell(Math.round(mGrams)+'g', 'Drugs', '#c89bff')}
+        </div>
+        <div style="font-size:13px;color:var(--tp);line-height:1.7;border-top:1px solid var(--border-d);padding-top:10px">
+          This month you've logged <strong style="color:var(--gold)">${monthLogs.length}</strong> seizure${monthLogs.length!==1?'s':''}${mArr?` and made <strong style="color:#f55">${mArr}</strong> arrest${mArr!==1?'s':''}`:''}.
+          ${mTopDrug!=='—'?`Your most-seized substance was <strong>${escapeHTML(mTopDrug)}</strong>.`:''}
+          ${mTopArea!=='—'?`You were most active around <strong>${escapeHTML(mTopArea)}</strong>.`:''}
+          ${mBiggest?`Your biggest single bust was worth <strong style="color:#6adba0">${fmtVal(mBiggest)}</strong>.`:''}
+        </div>
+      </div>`;
+    }
+  }
 
   const c = $('my-logs');
   if (!logs.length) { c.innerHTML='<div class="empty"><p>No logs yet.</p></div>'; return; }
@@ -5543,6 +5585,80 @@ async function openOfficerProfile(officerId) {
               + opsAttended*ACTIVITY_WEIGHTS.operation + totalAssists*ACTIVITY_WEIGHTS.assist + totalDisp*ACTIVITY_WEIGHTS.dispatch
               + profBonus;
 
+  // ── ACHIEVEMENTS ──────────────────────────────────────────────
+  // Derived entirely from existing data. Each badge = {icon,name,desc,earned}.
+  const totalGrams = logs.reduce((s,l) => {
+    const q = Number(l.qty)||0;
+    if (!l.drug) return s;
+    return s + (l.unit==='kilograms'?q*1000:l.unit==='ounces'?q*28.3:q);
+  }, 0);
+  const biggestSingle = logs.reduce((mx,l) => {
+    if (!l.drug) return mx;
+    const q = Number(l.qty)||0;
+    const g = l.unit==='kilograms'?q*1000:l.unit==='ounces'?q*28.3:q;
+    return Math.max(mx, g);
+  }, 0);
+  const weaponSetLogs = logs.filter(l => {
+    if (!l.firearm_detail) return false;
+    const d = new Set(l.firearm_detail.split(',').map(p=>p.trim().replace(/\s*x\s*\d+$/i,'').trim().toLowerCase()).filter(Boolean));
+    return d.size >= 4;
+  }).length;
+
+  const ACHIEVEMENTS = [
+    { icon:'🥇', name:'First Blood',    desc:'Logged your first seizure',            earned: totalLogs >= 1 },
+    { icon:'🚔', name:'First Arrest',   desc:'Made your first arrest',               earned: totalArrests >= 1 },
+    { icon:'📋', name:'Record Keeper',  desc:'Logged 25 seizures',                   earned: totalLogs >= 25 },
+    { icon:'📚', name:'Archivist',      desc:'Logged 100 seizures',                  earned: totalLogs >= 100 },
+    { icon:'⚖️', name:'The Cuffs',      desc:'Made 50 arrests',                      earned: totalArrests >= 50 },
+    { icon:'💊', name:'100g Club',      desc:'Seized 100g+ in a single bust',        earned: biggestSingle >= 100 },
+    { icon:'🏔️', name:'Kingpin Breaker',desc:'Seized 250g+ in a single bust',       earned: biggestSingle >= 250 },
+    { icon:'🌊', name:'Flood Control',  desc:'Seized 1kg total across all busts',    earned: totalGrams >= 1000 },
+    { icon:'🔫', name:'Weapon Hunter',  desc:'Seized a full weapon set (4+ guns)',   earned: weaponSetLogs >= 1 },
+    { icon:'🎖️', name:'Operator',       desc:'Attended 5 operations',                earned: opsAttended >= 5 },
+    { icon:'🤝', name:'Wingman',        desc:'Assisted on 10 seizures',              earned: totalAssists >= 10 },
+    { icon:'📡', name:'On The Air',     desc:'Made 25 dispatch calls',               earned: totalDisp >= 25 },
+  ];
+  const earnedBadges = ACHIEVEMENTS.filter(a => a.earned);
+
+  // ── PERSONAL BESTS ────────────────────────────────────────────
+  const bestValueLog = logs.reduce((best,l) => (Number(l.value)||0) > (Number(best?.value)||0) ? l : best, null);
+  const mostArrestsLog = logs.reduce((best,l) => (Number(l.arrests)||0) > (Number(best?.arrests)||0) ? l : best, null);
+  const bestGramsLog = logs.reduce((best,l) => {
+    if (!l.drug) return best;
+    const q = Number(l.qty)||0;
+    const g = l.unit==='kilograms'?q*1000:l.unit==='ounces'?q*28.3:q;
+    const bg = best ? (best.unit==='kilograms'?(Number(best.qty)||0)*1000:best.unit==='ounces'?(Number(best.qty)||0)*28.3:(Number(best.qty)||0)) : 0;
+    return g > bg ? l : best;
+  }, null);
+  // Best day (most logs in a single calendar day)
+  const dayCounts = {};
+  logs.forEach(l => { const d = (l.created_at||'').slice(0,10); if(d) dayCounts[d] = (dayCounts[d]||0)+1; });
+  const bestDayEntry = Object.entries(dayCounts).sort((a,b)=>b[1]-a[1])[0];
+
+  // ── ACTIVITY HEATMAP (last ~26 weeks) ─────────────────────────
+  // dayCounts already has per-day log counts (YYYY-MM-DD -> n).
+  // Build a grid ending today, going back 26 weeks, aligned to weeks.
+  const HEAT_WEEKS = 26;
+  const heatToday = new Date(); heatToday.setHours(0,0,0,0);
+  // Find the most recent Saturday (end of the last column) — grid columns are weeks
+  const heatEnd = new Date(heatToday);
+  heatEnd.setDate(heatEnd.getDate() + (6 - heatEnd.getDay())); // move to Saturday
+  const heatStart = new Date(heatEnd);
+  heatStart.setDate(heatStart.getDate() - (HEAT_WEEKS*7 - 1));
+  const heatCells = []; // columns of 7 days
+  for (let w = 0; w < HEAT_WEEKS; w++) {
+    const col = [];
+    for (let d = 0; d < 7; d++) {
+      const cur = new Date(heatStart);
+      cur.setDate(cur.getDate() + w*7 + d);
+      const key = cur.toISOString().slice(0,10);
+      const n = dayCounts[key] || 0;
+      col.push({ key, n, future: cur.getTime() > heatToday.getTime() });
+    }
+    heatCells.push(col);
+  }
+  const heatColor = n => n===0 ? 'rgba(255,255,255,.04)' : n===1 ? 'rgba(201,168,76,.35)' : n<=3 ? 'rgba(201,168,76,.6)' : 'rgba(201,168,76,1)';
+
   // Last active
   let lastActive = null;
   logs.forEach(l => { if (!lastActive || l.created_at > lastActive) lastActive = l.created_at; });
@@ -5568,6 +5684,12 @@ async function openOfficerProfile(officerId) {
     <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--ts);margin-top:2px">${label}</div>
   </div>`;
 
+  const pbCard = (label, val, sub) => `<div style="background:rgba(10,12,15,.5);border:1px solid var(--border-d);border-radius:8px;padding:10px 14px">
+    <div style="font-size:11px;color:var(--ts);margin-bottom:3px">${label}</div>
+    <div style="font-size:17px;font-weight:800;color:var(--gold)">${val}</div>
+    ${sub?`<div style="font-size:11px;color:var(--ts);margin-top:1px">${sub}</div>`:''}
+  </div>`;
+
   content.innerHTML =
     '<div style="background:linear-gradient(135deg,rgba(201,168,76,.12),rgba(10,12,15,.4));padding:1.8rem 1.8rem 1.5rem;border-bottom:1px solid var(--border-d);display:flex;align-items:center;gap:1.2rem">'
     + '<div style="width:64px;height:64px;border-radius:50%;background:var(--gold);color:#0a0c0f;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:800;flex-shrink:0">'+escapeHTML(initials)+'</div>'
@@ -5589,6 +5711,45 @@ async function openOfficerProfile(officerId) {
     + stat('Assists', totalAssists, '#c89bff')
     + stat('Dispatch', totalDisp, '#7ab8ff')
     + stat('Seized', fmtVal(totalValue), '#6adba0')
+    + '</div>'
+    // Achievements
+    + '<div style="padding:0 1.8rem 1.5rem">'
+    + '<div style="font-size:11px;font-weight:700;letter-spacing:2px;color:var(--gold);margin-bottom:10px">🏆 ACHIEVEMENTS <span style="color:var(--ts);font-weight:400">('+earnedBadges.length+'/'+ACHIEVEMENTS.length+')</span></div>'
+    + '<div style="display:flex;flex-wrap:wrap;gap:8px">'
+    + ACHIEVEMENTS.map(a =>
+        '<div title="'+escapeHTML(a.desc)+(a.earned?'':' (locked)')+'" style="display:flex;align-items:center;gap:7px;background:'+(a.earned?'rgba(201,168,76,.12)':'rgba(255,255,255,.03)')+';border:1px solid '+(a.earned?'var(--gold)':'var(--border-d)')+';border-radius:20px;padding:5px 12px;font-size:12px;'+(a.earned?'':'opacity:.45;')+'">'
+        + '<span style="font-size:14px;'+(a.earned?'':'filter:grayscale(1)')+'">'+a.icon+'</span>'
+        + '<span style="'+(a.earned?'color:var(--tp);font-weight:600':'color:var(--ts)')+'">'+escapeHTML(a.name)+'</span>'
+        + '</div>'
+      ).join('')
+    + '</div></div>'
+    // Personal Bests
+    + '<div style="padding:0 1.8rem 1.5rem">'
+    + '<div style="font-size:11px;font-weight:700;letter-spacing:2px;color:var(--gold);margin-bottom:10px">⭐ PERSONAL BESTS</div>'
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">'
+    + pbCard('💰 Biggest Seizure', bestValueLog ? fmtVal(bestValueLog.value) : '—', bestValueLog ? 'Log #'+bestValueLog.id : '')
+    + pbCard('🚔 Most Arrests (one log)', mostArrestsLog && mostArrestsLog.arrests ? mostArrestsLog.arrests : '—', mostArrestsLog && mostArrestsLog.arrests ? 'Log #'+mostArrestsLog.id : '')
+    + pbCard('💊 Largest Drug Bust', bestGramsLog ? (Math.round(bestGramsLog.unit==='kilograms'?(Number(bestGramsLog.qty)||0)*1000:bestGramsLog.unit==='ounces'?(Number(bestGramsLog.qty)||0)*28.3:(Number(bestGramsLog.qty)||0)))+'g' : '—', bestGramsLog ? escapeHTML(bestGramsLog.drug||'') : '')
+    + pbCard('🔥 Busiest Day', bestDayEntry ? bestDayEntry[1]+' logs' : '—', bestDayEntry ? fmtDate(bestDayEntry[0]) : '')
+    + '</div></div>'
+    // Activity Heatmap
+    + '<div style="padding:0 1.8rem 1.5rem">'
+    + '<div style="font-size:11px;font-weight:700;letter-spacing:2px;color:var(--gold);margin-bottom:10px">📊 ACTIVITY — LAST 6 MONTHS</div>'
+    + '<div style="display:flex;gap:3px;overflow-x:auto;padding-bottom:4px">'
+    + heatCells.map(col =>
+        '<div style="display:flex;flex-direction:column;gap:3px">'
+        + col.map(cell =>
+            '<div title="'+(cell.future?'':cell.n+' log'+(cell.n!==1?'s':'')+' · '+fmtDate(cell.key))+'" style="width:11px;height:11px;border-radius:2px;background:'+(cell.future?'transparent':heatColor(cell.n))+'"></div>'
+          ).join('')
+        + '</div>'
+      ).join('')
+    + '</div>'
+    + '<div style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:10px;color:var(--ts)">Less '
+    + '<div style="width:10px;height:10px;border-radius:2px;background:rgba(255,255,255,.04)"></div>'
+    + '<div style="width:10px;height:10px;border-radius:2px;background:rgba(201,168,76,.35)"></div>'
+    + '<div style="width:10px;height:10px;border-radius:2px;background:rgba(201,168,76,.6)"></div>'
+    + '<div style="width:10px;height:10px;border-radius:2px;background:rgba(201,168,76,1)"></div>'
+    + ' More</div>'
     + '</div>'
     // Recent activity
     + '<div style="padding:0 1.8rem 1.8rem">'
