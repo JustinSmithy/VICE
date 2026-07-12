@@ -960,6 +960,7 @@ textarea.fi{resize:vertical;min-height:80px}
         <button class="sb-btn" data-tab="suspects"><span class="sb-icon">🪪</span>Suspects</button>
         <button class="sb-btn" data-tab="mail"><span class="sb-icon">✉️</span>IC Intranet <span id="sb-mail-badge" style="margin-left:auto;background:var(--gold);color:#0a0c0f;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700;display:none"></span></button>
         <button class="sb-btn admin-only" data-tab="apps" style="display:none"><span class="sb-icon">📝</span>Applications <span id="sb-apps-badge" style="margin-left:auto;background:var(--gold);color:#0a0c0f;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700;display:none"></span></button>
+        <button class="sb-btn" data-tab="download"><span class="sb-icon">⬇️</span>Download Client</button>
         <button class="sb-btn" data-tab="ops"><span class="sb-icon">📌</span>Operations</button>
         <button class="sb-btn admin-only" data-tab="activity" style="display:none"><span class="sb-icon">📅</span>Activity</button>
         <button class="sb-btn admin-only" data-tab="users" style="display:none"><span class="sb-icon">👥</span>Manage Officers</button>
@@ -979,6 +980,7 @@ textarea.fi{resize:vertical;min-height:80px}
 
         <!-- HOME WIDGET -->
         <div class="tab-pane active" id="tab-home">
+          <div id="onboarding-card"></div>
           <div id="home-widget-content">
             <div class="load-state"><span class="spinner"></span> Loading…</div>
           </div>
@@ -1335,6 +1337,56 @@ textarea.fi{resize:vertical;min-height:80px}
           </div>
           <div style="margin-bottom:1rem"><input class="fi" id="suspect-search" placeholder="Search by name..." style="max-width:320px" oninput="filterSuspects(this.value)" /></div>
           <div id="suspects-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:1rem"></div>
+        </div>
+        <!-- ═══════════ DOWNLOAD CLIENT TAB ═══════════ -->
+        <div class="tab-pane" id="tab-download">
+          <div class="sec-hd"><div class="tag">In-Game Terminal</div><h2>Download the VICE Client</h2></div>
+          <div style="color:var(--ts);font-size:13px;margin:-8px 0 1.5rem">The VICE OS terminal lets you log seizures, broadcast dispatch, and check unit stats from in-game. Download it below and follow the setup steps.</div>
+
+          <!-- Download card -->
+          <div style="background:linear-gradient(135deg,rgba(201,168,76,.10),rgba(201,168,76,.03));border:1px solid rgba(201,168,76,.35);border-radius:14px;padding:1.75rem;margin-bottom:1.75rem;display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap">
+            <div style="font-size:48px">⬇️</div>
+            <div style="flex:1;min-width:200px">
+              <div style="font-size:18px;font-weight:800;margin-bottom:2px">VICE OS — Latest Version</div>
+              <div style="color:var(--ts);font-size:13px">MoonLoader script package (vice_unit, vice_http, vice_codes)</div>
+            </div>
+            <a href="https://www.mediafire.com/folder/cnrfhajjsjtdh/VICE" target="_blank" rel="noopener" style="background:var(--gold);color:#0a0c0f;border:none;border-radius:8px;padding:12px 24px;font-weight:700;font-size:14px;text-decoration:none;white-space:nowrap;display:inline-block">Download from MediaFire →</a>
+          </div>
+
+          <!-- Requirements -->
+          <div class="map-card" style="margin-bottom:1.5rem">
+            <h4>📋 Requirements</h4>
+            <ul style="margin:.5rem 0 0;padding-left:1.2rem;color:var(--tp);font-size:14px;line-height:1.9">
+              <li>GTA San Andreas (SA:MP) on the Horizon Gaming server</li>
+              <li><strong>MoonLoader</strong> installed</li>
+              <li>The <strong>mimgui</strong> library (a standard MoonLoader library — install it if you don't have it)</li>
+            </ul>
+          </div>
+
+          <!-- Install steps -->
+          <div class="map-card" style="margin-bottom:1.5rem">
+            <h4>🛠 Installation</h4>
+            <ol style="margin:.5rem 0 0;padding-left:1.2rem;color:var(--tp);font-size:14px;line-height:1.9">
+              <li>Click <strong>Download from MediaFire</strong> above and download all three files (<code>vice_unit.lua</code>, <code>vice_http.lua</code>, <code>vice_codes.lua</code>).</li>
+              <li>Extract them if they're in a .rar (use WinRAR or 7-Zip).</li>
+              <li>Place all three <code>.lua</code> files directly into your <strong>moonloader</strong> folder<br><span style="color:var(--ts);font-size:12px">(usually <code>...\\GTA San Andreas\\moonloader\\</code>)</span></li>
+              <li>Launch the game (or type <code>/reload</code> in-game if already running).</li>
+              <li>In-game, link your badge with <code>/vicebadge &lt;your badge number&gt;</code></li>
+              <li>Open the terminal with <code>/vice</code> — you're set!</li>
+            </ol>
+          </div>
+
+          <!-- Commands -->
+          <div class="map-card" style="margin-bottom:0">
+            <h4>⌨️ Commands</h4>
+            <div style="display:grid;grid-template-columns:auto 1fr;gap:8px 16px;font-size:14px;margin-top:.5rem">
+              <code style="color:var(--gold)">/vice</code><span style="color:var(--tp)">Open the VICE terminal (log seizures, stats, dispatch)</span>
+              <code style="color:var(--gold)">/vicebadge &lt;n&gt;</code><span style="color:var(--tp)">Link or change your officer badge</span>
+              <code style="color:var(--gold)">/vicecodes</code><span style="color:var(--tp)">Print the full ten-code radio reference</span>
+              <code style="color:var(--gold)">/r &lt;code&gt;</code><span style="color:var(--tp)">Broadcast a radio status to dispatch</span>
+              <code style="color:var(--gold)">/vicehelp</code><span style="color:var(--tp)">Show the command list in chat</span>
+            </div>
+          </div>
         </div>
         <!-- ═══════════ OPERATIONS TAB ═══════════ -->
         <div class="tab-pane" id="tab-ops">
@@ -3050,15 +3102,6 @@ async function submitLog() {
     await db().from('log_arrestees').insert(enriched.map(a => ({log_id:newLog.id,...a})));
     // Refresh suspect cache
     _suspectsCache = null;
-  }
-
-  // Mirror this website-logged seizure to the LSPD public record.
-  // Fire-and-forget: calls Vice's worker, which reads the seizure by id
-  // and forwards it to PD (keeping the PD token server-side).
-  if (newLog?.id) {
-    try {
-      fetch('https://vice-unit.lspd-bridge.workers.dev/mirror-seizure?log_id=' + encodeURIComponent(newLog.id));
-    } catch (e) { /* PD mirror is best-effort; never blocks the Vice log */ }
   }
 
   showMsg('add-log-msg','✅ Seizure log submitted!','ok');
@@ -5632,7 +5675,52 @@ document.addEventListener('keydown', e => {
 // Shown on first login. Pulls stats, unread mail, active dispatch,
 // pending bulletins and recent logs into one summary view.
 // ═══════════════════════════════════════════════════════════════════════════
+function renderOnboardingCard() {
+  const box = $('onboarding-card');
+  if (!box) return;
+  // Show only if the officer hasn't dismissed it
+  if (!officer || officer.onboarded === true) { box.innerHTML = ''; return; }
+
+  const step = (n, title, desc, tab) =>
+    `<div style="display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--border-d)${tab?';cursor:pointer':''}"${tab?` onclick="document.querySelector('.sb-btn[data-tab=${tab}]').click()"`:''}>
+      <div style="width:26px;height:26px;border-radius:50%;background:var(--gold);color:#0a0c0f;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex-shrink:0">${n}</div>
+      <div><div style="font-weight:600;font-size:14px">${title}${tab?' <span style="color:var(--gold);font-size:12px">→</span>':''}</div><div style="color:var(--ts);font-size:13px;margin-top:2px">${desc}</div></div>
+    </div>`;
+
+  box.innerHTML = `
+    <div style="background:linear-gradient(135deg,rgba(201,168,76,.10),rgba(201,168,76,.03));border:1px solid rgba(201,168,76,.35);border-radius:14px;padding:1.5rem 1.75rem;margin-bottom:1.5rem;position:relative">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.75rem">
+        <div>
+          <div style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--gold);font-weight:700;margin-bottom:4px">👋 Welcome to the Vice Unit</div>
+          <div style="font-size:19px;font-weight:800">Getting Started</div>
+          <div style="color:var(--ts);font-size:13px;margin-top:2px">A quick guide to get you up and running. Click any step to jump there.</div>
+        </div>
+      </div>
+      ${step(1, 'Download &amp; install the in-game terminal', 'Get the VICE OS client and follow the setup steps.', 'download')}
+      ${step(2, 'Link your badge', 'In-game, run <code>/vicebadge &lt;your badge&gt;</code>, then open the terminal with <code>/vice</code>.', 'download')}
+      ${step(3, 'Log your first seizure', 'Record drugs, firearms, and arrests — from in-game or here on the website.', 'add')}
+      ${step(4, 'Sign up for operations', 'Check upcoming ops and sign up — attendance earns the most activity points.', 'ops')}
+      ${step(5, 'Read the Handbook &amp; FAQ', 'The full manual and answers to common questions live on the public site (top nav).', '')}
+      <div style="margin-top:1rem;display:flex;justify-content:flex-end">
+        <button class="btn primary" id="onboard-dismiss-btn">✓ Got it, hide this</button>
+      </div>
+    </div>`;
+
+  const btn = document.getElementById('onboard-dismiss-btn');
+  if (btn) btn.addEventListener('click', dismissOnboarding);
+}
+
+async function dismissOnboarding() {
+  const box = $('onboarding-card');
+  if (box) box.innerHTML = '';           // hide immediately
+  if (officer) officer.onboarded = true; // update local copy
+  try {
+    await db().from('officers').update({ onboarded: true }).eq('id', me.id);
+  } catch(e) { /* if it fails, it'll just show again next login — harmless */ }
+}
+
 async function loadHomeWidget() {
+  renderOnboardingCard();
   const el = $('home-widget-content');
   if (!el) return;
   el.innerHTML = '<div style="color:var(--ts);padding:2rem;text-align:center">Loading...</div>';
