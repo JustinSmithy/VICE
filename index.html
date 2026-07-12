@@ -10,7 +10,10 @@
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Segoe UI',system-ui,sans-serif;background:#0a0c0f;color:#e8eaf0;min-height:100vh;overflow-y:auto}
 .pfbg{position:fixed;inset:0;z-index:-1;background-size:cover;background-position:center;pointer-events:none;display:none}
-.pfbg::after{content:'';position:fixed;inset:0;background:rgba(10,12,15,.65);z-index:-1;pointer-events:none}
+.pfbg::after{content:'';position:fixed;inset:0;background:rgba(10,12,15,.72);z-index:-1;pointer-events:none}
+/* Dashboard background — subtle, heavily darkened so tables/forms stay readable */
+.dbg{position:fixed;inset:0;z-index:-1;background-size:cover;background-position:center;pointer-events:none;display:none}
+.dbg::after{content:'';position:fixed;inset:0;background:rgba(10,12,15,.90);z-index:-1;pointer-events:none}
 :root{
   --gold:#c9a84c;--gold-l:#e8c96a;
   --navy:#0d1117;--navy-m:#161b24;--navy-l:#1e2535;
@@ -4455,7 +4458,7 @@ $('log-modal-close').addEventListener('click', closeLogModal);
 // Set hero background image — visible by default since the public page loads first
 const pfbgEl = $('pfbg');
 if (pfbgEl) {
-  pfbgEl.style.backgroundImage = 'url(https://i.postimg.cc/ZqXPkr7Z/Chat-GPT-Image-Jun-12-2026-10-05-53-PM.png)';
+  pfbgEl.style.backgroundImage = 'url(https://i.postimg.cc/WbszdsRR/Chat-GPT-Image-Jul-12-2026-09-09-49-PM.png)';
   pfbgEl.style.display = 'block';
 }
 
