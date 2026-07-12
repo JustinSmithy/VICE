@@ -183,6 +183,16 @@ textarea.fi{resize:vertical;min-height:80px}
 .empty{text-align:center;padding:4rem 2rem;color:var(--ts)}
 .empty-icon{font-size:40px;margin-bottom:12px}
 .spinner{display:inline-block;width:18px;height:18px;border:2px solid rgba(201,168,76,.2);border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle}
+#toast-wrap{position:fixed;bottom:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:10px;max-width:360px}
+.toast{background:var(--bg2,#161b24);border:1px solid var(--border,#2a2f3a);border-left:4px solid var(--gold);border-radius:8px;padding:12px 16px;font-size:13px;color:var(--tp,#e8eaed);box-shadow:0 8px 24px rgba(0,0,0,.4);display:flex;align-items:flex-start;gap:10px;animation:toastIn .25s ease;line-height:1.5}
+.toast.ok{border-left-color:#6adba0}
+.toast.err{border-left-color:#f0685e}
+.toast.info{border-left-color:#7ab8ff}
+.toast-ico{font-size:16px;flex-shrink:0;line-height:1.3}
+.toast.leaving{animation:toastOut .25s ease forwards}
+@keyframes toastIn{from{transform:translateX(120%);opacity:0}to{transform:translateX(0);opacity:1}}
+@keyframes toastOut{from{transform:translateX(0);opacity:1}to{transform:translateX(120%);opacity:0}}
+@media(max-width:640px){#toast-wrap{left:12px;right:12px;bottom:12px;max-width:none}}
 .officer-ac{position:absolute;top:100%;left:0;right:0;background:var(--bg2);border:1px solid var(--border);border-top:none;border-radius:0 0 8px 8px;max-height:220px;overflow-y:auto;z-index:50;box-shadow:0 8px 20px rgba(0,0,0,.4)}
 .officer-ac-item{padding:9px 14px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border-d)}
 .officer-ac-item:last-child{border-bottom:none}
@@ -1252,6 +1262,7 @@ textarea.fi{resize:vertical;min-height:80px}
             </div>
           </div>
           <div class="sec-hd"><div class="tag">Personal</div><h2>My Contribution</h2></div>
+          <div id="st-trend" style="margin-bottom:1rem"></div>
           <div class="sg">
             <div class="sc"><div class="sc-lbl">📦 My Seizures</div><div class="sc-val gold" id="st-seizures">—</div></div>
             <div class="sc"><div class="sc-lbl">💰 Total Value</div><div class="sc-val green" id="st-value">—</div></div>
@@ -1742,9 +1753,48 @@ const CHARGE_CONFLICTS = {
 // HELPERS
 // ═══════════════════════════════════════════════════
 const $ = id => document.getElementById(id);
+
+// ── Toast notifications ──────────────────────────────────────────
+function toast(message, type = 'info', duration = 4000) {
+  let wrap = document.getElementById('toast-wrap');
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.id = 'toast-wrap';
+    document.body.appendChild(wrap);
+  }
+  const ico = type === 'ok' ? '✅' : type === 'err' ? '⚠️' : 'ℹ️';
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.innerHTML = '<span class="toast-ico">' + ico + '</span><span></span>';
+  el.querySelector('span:last-child').textContent = message; // safe text
+  wrap.appendChild(el);
+  const remove = () => {
+    el.classList.add('leaving');
+    setTimeout(() => el.remove(), 250);
+  };
+  el.addEventListener('click', remove);
+  setTimeout(remove, duration);
+}
 const STORAGE_BUCKET = 'mugshots';  // Supabase storage bucket name
 const EVIDENCE_SEP  = ' | ';         // Separator for multiple evidence URLs
 const fmtDate = iso => new Date(iso).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+
+// Relative time: "just now", "5m ago", "3h ago", "2d ago", else the date.
+const fmtRelative = iso => {
+  if (!iso) return '';
+  const then = new Date(iso).getTime();
+  const diff = Date.now() - then;
+  if (isNaN(diff)) return fmtDate(iso);
+  const s = Math.floor(diff/1000);
+  if (s < 45) return 'just now';
+  const m = Math.floor(s/60);
+  if (m < 60) return m + 'm ago';
+  const h = Math.floor(m/60);
+  if (h < 24) return h + 'h ago';
+  const d = Math.floor(h/24);
+  if (d < 7) return d + 'd ago';
+  return fmtDate(iso);
+};
 const fmtVal  = n => { n=Number(n)||0; if(n>=1e6)return'$'+(n/1e6).toFixed(1)+'M'; if(n>=1000)return'$'+Math.round(n/1000)+'k'; return'$'+n.toLocaleString(); };
 const escapeHTML = s => s == null ? '' : String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 function logTypeLabel(l){const isF=l.log_type==='firearm'||l.log_type==='both';const isD=l.log_type==='drug'||l.log_type==='both';return l.log_type==='arrest'?'Trafficking Arrest':isF&&isD?'Narcotics & Firearms':isF?'Firearms':'Narcotics';}
@@ -2264,6 +2314,19 @@ function renderDashLogs() {
   const suspectMugshots = _dashSuspectMugshots;
   const container = $('logs-list');
 
+  // Update the type-filter option labels with live counts
+  const typeSel = $('logs-filter-type');
+  if (typeSel && logs) {
+    const counts = { '': logs.length, drug: 0, firearm: 0, both: 0, arrest: 0 };
+    logs.forEach(l => { if (counts[l.log_type] !== undefined) counts[l.log_type]++; });
+    const labels = { '':'All types', drug:'Narcotics', firearm:'Firearms', both:'Narcotics & Firearms', arrest:'Trafficking Arrest' };
+    Array.from(typeSel.options).forEach(o => {
+      const base = labels[o.value] ?? o.textContent.replace(/\s*\(\d+\)$/, '');
+      const c = counts[o.value];
+      o.textContent = c !== undefined ? `${base} (${c})` : base;
+    });
+  }
+
   // Read filters
   const q        = ($('logs-search')?.value || '').trim().toLowerCase();
   const typeFilt = $('logs-filter-type')?.value || '';
@@ -2525,7 +2588,7 @@ async function toggleWithhold(id, withhold) {
     : 'Restore activity points to this log? It will count toward the officer\'s score again.';
   if (!confirm(msg)) return;
   const { error } = await db().from('seizure_logs').update({ points_withheld: withhold }).eq('id', id);
-  if (error) { alert('Error: ' + error.message); return; }
+  if (error) { toast('Error: ' + error.message, 'err'); return; }
   closeLogModal();
   loadDashLogs();
 }
@@ -2927,7 +2990,7 @@ function makeChargeLine(removable) {
 
 function addChargeLine(btn) {
   const list = btn.closest('.fgrp').querySelector('.charge-list');
-  if (list.querySelectorAll('.charge-line').length >= 6) { alert('Maximum 6 charges per person.'); return; }
+  if (list.querySelectorAll('.charge-line').length >= 6) { toast('Maximum 6 charges per person.', 'err'); return; }
   const line = makeChargeLine(true);
   list.appendChild(line);
   // Recheck conflicts across all lines in this arrestee row when a line is added
@@ -3227,7 +3290,7 @@ async function loadDispatch() {
   const frag = document.createDocumentFragment();
   data.forEach(d => {
     const tr = document.createElement('tr');
-    const time = new Date(d.created_at).toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit'});
+    const time = new Date(d.created_at).toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit'}) + ' · ' + fmtRelative(d.created_at);
     const statusLbl = DISPATCH_STATUS_LABELS[d.status] || d.status;
     const statusCls = DISPATCH_STATUS_CLASS[d.status] || 'bg-blue';
 
@@ -3273,14 +3336,14 @@ async function loadDispatch() {
 
 async function updateDispatchStatus(id, status) {
   const { error } = await db().from('dispatch_calls').update({status}).eq('id', id);
-  if (error) alert('Error updating status: '+error.message);
+  if (error) toast('Error updating status: '+error.message, 'err');
   else loadDispatch();
 }
 
 async function deleteDispatchCall(id) {
   if (!confirm('Delete this dispatch call? This cannot be undone.')) return;
   const { error } = await db().from('dispatch_calls').delete().eq('id', id);
-  if (error) alert('Error deleting call: ' + error.message);
+  if (error) toast('Error deleting call: ' + error.message, 'err');
   else loadDispatch();
 }
 
@@ -3307,6 +3370,27 @@ async function loadStats() {
   }
   $('st-seizures').textContent = logs.length;
   $('st-value').textContent    = fmtVal(totalVal);
+
+  // ── Weekly trend: this week vs the previous week ──
+  const now = Date.now();
+  const week = 7*24*60*60*1000;
+  const thisWeek = logs.filter(l => (now - new Date(l.created_at).getTime()) < week).length;
+  const lastWeek = logs.filter(l => {
+    const age = now - new Date(l.created_at).getTime();
+    return age >= week && age < 2*week;
+  }).length;
+  const trendEl = $('st-trend');
+  if (trendEl) {
+    let arrow, color, text;
+    if (thisWeek > lastWeek)      { arrow='▲'; color='#6adba0'; text='up from '+lastWeek+' last week'; }
+    else if (thisWeek < lastWeek) { arrow='▼'; color='#f0685e'; text='down from '+lastWeek+' last week'; }
+    else                          { arrow='●'; color='var(--ts)'; text='same as last week'; }
+    trendEl.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--border-d);border-radius:8px;padding:12px 16px;display:flex;align-items:center;gap:12px">
+      <span style="font-size:20px;color:${color}">${arrow}</span>
+      <div><div style="font-size:14px;font-weight:600"><strong style="color:${color}">${thisWeek}</strong> log${thisWeek!==1?'s':''} this week</div>
+      <div style="font-size:12px;color:var(--ts)">${text}</div></div>
+    </div>`;
+  }
   $('st-arrests').textContent  = totalArr;
   $('st-firearms').textContent = totalFA;
   $('st-drugs').textContent    = drugLogs.length;
@@ -3660,9 +3744,9 @@ async function openMsg(id, msgs) {
 async function deleteMsg(id) {
   if (!confirm('Delete this message?')) return;
   const { data, error } = await db().from('messages').delete().eq('id', id).select('id');
-  if (error) return alert('Error: '+error.message);
+  if (error) return toast('Error: '+error.message, 'err');
   if (!data?.length) {
-    alert('Delete request was sent but no message was removed — this usually means a Supabase RLS policy is blocking deletes. See setup instructions to add a delete policy on the messages table.');
+    toast('Delete request was sent but no message was removed — this usually means a Supabase RLS policy is blocking deletes. See setup instructions to add a delete policy on the messages table.', 'ok');
     return;
   }
   $('mail-view').innerHTML = '<div style="text-align:center;padding:4rem;color:var(--ts)"><div style="font-size:36px;margin-bottom:12px">✉️</div><p>Select a message</p></div>';
@@ -3682,11 +3766,11 @@ async function sendReply() {
     to_id: orig.from_id, to_name: orig.from_name,
     subject: 'Re: '+(orig.subject||''), body, read: false
   }).select('id');
-  if (error) return alert('Error: '+error.message);
-  if (!data?.length) return alert('Reply was blocked — likely an RLS policy issue on the messages table. See setup instructions.');
+  if (error) return toast('Error: '+error.message, 'err');
+  if (!data?.length) return toast('Reply was blocked — likely an RLS policy issue on the messages table. See setup instructions.', 'err');
   $('reply-body').value = '';
   $('mail-reply').style.display = 'none';
-  alert('Reply sent!');
+  toast('Reply sent!', 'ok');
   loadMail(mailFolder);
 }
 
@@ -3694,7 +3778,7 @@ async function sendCompose() {
   const toQ     = $('compose-to').value.trim();
   const subject = $('compose-subject').value.trim();
   const body    = $('compose-body').value.trim();
-  if (!toQ || !body) return alert('Please fill in recipient and message.');
+  if (!toQ || !body) return toast('Please fill in recipient and message.', 'err');
 
   const { data: allOfficers } = await db().from('officers').select('id,name,badge').eq('verified', true);
   const officers = allOfficers || [];
@@ -3702,16 +3786,16 @@ async function sendCompose() {
   if (toQ.toLowerCase() === 'vice') {
     // Unit-wide broadcast — send to all verified officers except self
     const recipients = officers.filter(o => o.id !== me.id);
-    if (!recipients.length) return alert('No other officers found.');
+    if (!recipients.length) return toast('No other officers found.', 'err');
     const rows = recipients.map(o => ({
       from_id: me.id, from_name: officer.name,
       to_id: o.id, to_name: o.name,
       subject: '[VICE] ' + subject, body, read: false
     }));
     const { error } = await db().from('messages').insert(rows);
-    if (error) return alert('Error: '+error.message);
+    if (error) return toast('Error: '+error.message, 'err');
     $('compose-pane').style.display = 'none';
-    alert('Unit-wide message sent to ' + recipients.length + ' officers.');
+    toast('Unit-wide message sent to ' + recipients.length + ' officers.', 'ok');
     loadMail('sent');
     return;
   }
@@ -3720,15 +3804,15 @@ async function sendCompose() {
     o.name.toLowerCase() === toQ.toLowerCase() ||
     (o.badge && o.badge.toLowerCase() === toQ.toLowerCase())
   );
-  if (!match) return alert('Officer "' + toQ + '" not found. Start typing their name to see suggestions.');
+  if (!match) return toast('Officer "' + toQ + '" not found. Start typing their name to see suggestions.', 'err');
   const { error } = await db().from('messages').insert({
     from_id: me.id, from_name: officer.name,
     to_id: match.id, to_name: match.name,
     subject, body, read: false
   });
-  if (error) return alert('Error: '+error.message);
+  if (error) return toast('Error: '+error.message, 'err');
   $('compose-pane').style.display = 'none';
-  alert('Message sent to ' + match.name + '!');
+  toast('Message sent to ' + match.name + '!', 'ok');
   loadMail('sent');
 }
 
@@ -3742,7 +3826,7 @@ let intrApp = null;
 let intrMsgs = [];
 async function openApplicantIntranet() {
   const app = window._lastApp;
-  if (!app) return alert('Application data not found. Please check your status again.');
+  if (!app) return toast('Application data not found. Please check your status again.', 'err');
   intrApp = app;
   showPage('intranet');
 
@@ -4156,7 +4240,7 @@ Drug Enforcement Division`;
 
 async function updateApp(id, status) {
   const { data: app, error } = await db().from('applications').update({status}).eq('id',id).select('*').single();
-  if (error) return alert('Error: '+error.message);
+  if (error) return toast('Error: '+error.message, 'err');
 
   // Auto-send Ride Along notification email when moved to reviewed stage
   if (status === 'reviewed' && app?.char_name) {
@@ -4170,9 +4254,9 @@ async function updateApp(id, status) {
       read: false
     }).select('id');
     if (mailErr) {
-      alert('Application moved to Ride Along, but the automatic email failed to send: ' + mailErr.message + '\n\nThis is usually a Supabase RLS policy issue — see setup instructions.');
+      toast('Application moved to Ride Along, but the automatic email failed to send: ' + mailErr.message + '\n\nThis is usually a Supabase RLS policy issue — see setup instructions.', 'err');
     } else if (!mailData?.length) {
-      alert('Application moved to Ride Along, but the automatic email was silently blocked (likely an RLS policy on the messages table prevents this insert). Check Supabase setup instructions to allow officer-sent messages.');
+      toast('Application moved to Ride Along, but the automatic email was silently blocked (likely an RLS policy on the messages table prevents this insert). Check Supabase setup instructions to allow officer-sent messages.', 'err');
     }
   }
 
@@ -4182,7 +4266,7 @@ async function updateApp(id, status) {
 async function deleteApp(id) {
   if (!confirm('Delete this application?')) return;
   const { error } = await db().from('applications').delete().eq('id',id);
-  if (error) alert('Error: '+error.message);
+  if (error) toast('Error: '+error.message, 'err');
   else { loadApps(); checkNotifications(); }
 }
 
@@ -4199,10 +4283,10 @@ async function saveOfficerEdit(id) {
   const name  = row.querySelector('.edit-name')?.value.trim();
   const roleSel = row.querySelector('.edit-role');
   const role    = roleSel ? roleSel.value : undefined;
-  if (!rank||!badge) return alert('Rank and badge are required.');
+  if (!rank||!badge) return toast('Rank and badge are required.', 'err');
   const updateData = role !== undefined ? {rank, badge, name, role} : {rank, badge, name};
   const { error } = await db().from('officers').update(updateData).eq('id', id);
-  if (error) return alert('Error: '+error.message);
+  if (error) return toast('Error: '+error.message, 'err');
   row.style.display = 'none';
   loadUsers();
 }
@@ -4304,13 +4388,13 @@ async function removeOfficer(id, name) {
   if (!confirm(`Remove ${name}? This deletes their officer record.\n\nNote: to let them re-register with the same email, you must ALSO delete their account in Supabase → Authentication → Users.`)) return;
   // Delete officer row from DB (admin-only via RLS)
   const { error } = await db().from('officers').delete().eq('id', id);
-  if (error) { alert('Error: ' + error.message); return; }
+  if (error) { toast('Error: ' + error.message, 'err'); return; }
   // NOTE: the Supabase Auth user is intentionally NOT deleted from here.
   // Doing so would require the bridge admin token in client-side code,
   // which would expose it to anyone viewing the page source. To free up
   // the email for re-registration, delete the user manually in
   // Supabase → Authentication → Users.
-  alert(`${name}'s officer record was removed.\n\nIf they need to re-register with the same email, delete their account in Supabase → Authentication → Users.`);
+  toast(`${name}'s officer record was removed.\n\nIf they need to re-register with the same email, delete their account in Supabase → Authentication → Users.`, 'ok');
   loadUsers();
 }
 async function verifyOfficer(id,name) { if(!confirm(`Verify ${name}?`))return; await db().from('officers').update({verified:true}).eq('id',id); loadUsers(); }
@@ -5087,9 +5171,9 @@ async function loadOps() {
 
 async function markAttendance(signupId, attended) {
   const { data, error } = await db().from('briefing_signups').update({ attended }).eq('id', signupId).select();
-  if (error) { alert('Error: ' + error.message); return; }
+  if (error) { toast('Error: ' + error.message, 'err'); return; }
   if (!data || !data.length) {
-    alert('Attendance was not saved — the database rejected the update. Run SQL migration 015 (signups update policy).');
+    toast('Attendance was not saved — the database rejected the update. Run SQL migration 015 (signups update policy).', 'ok');
     return;
   }
   // Refresh the modal content
@@ -5112,7 +5196,7 @@ async function signBriefing(briefingId) {
     officer_rank: officer.rank || 'Officer',
   });
   if (error && !error.message.includes('duplicate')) {
-    alert('Error: ' + error.message);
+    toast('Error: ' + error.message, 'err');
   }
   loadOps();
 }
@@ -5121,7 +5205,7 @@ async function unsignBriefing(briefingId) {
   if (!confirm('Withdraw from this operation?')) return;
   const { error } = await db().from('briefing_signups')
     .delete().eq('briefing_id', briefingId).eq('officer_id', me.id);
-  if (error) alert('Error: ' + error.message);
+  if (error) toast('Error: ' + error.message, 'err');
   loadOps();
 }
 
@@ -5589,7 +5673,7 @@ function wireOfficerNoteForm(officerId) {
 async function deleteOfficerNote(noteId, officerId) {
   if (!confirm('Remove this entry from the officer\'s record?')) return;
   const { error } = await db().from('officer_notes').delete().eq('id', noteId);
-  if (error) { alert('Error: ' + error.message); return; }
+  if (error) { toast('Error: ' + error.message, 'err'); return; }
   openOfficerProfile(officerId); // refresh
 }
 
@@ -5844,9 +5928,9 @@ async function loadHomeWidget() {
       <div style="background:var(--bg2);border:1px solid var(--border-d);border-radius:8px;overflow:hidden">`;
     recentLogs.forEach(l => {
       const item = l.drug_detail||l.drug||l.firearm_detail||l.firearm||l.log_type||'Log';
-      html += `<div style="padding:10px 14px;border-bottom:1px solid var(--border-d);display:flex;justify-content:space-between;align-items:center">
-        <div><span style="font-size:13px;font-weight:600">Log #${l.id}</span> <span style="font-size:12px;color:var(--ts)">· ${item} · ${l.location||'—'}</span></div>
-        <div style="font-size:12px;color:var(--gold);font-weight:600">${fmtVal(l.value)}</div>
+      html += `<div style="padding:10px 14px;border-bottom:1px solid var(--border-d);display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <div style="min-width:0"><span style="font-size:13px;font-weight:600">Log #${l.id}</span> <span style="font-size:12px;color:var(--ts)">· ${escapeHTML(item)} · ${escapeHTML(l.location||'—')}</span></div>
+        <div style="text-align:right;flex-shrink:0"><div style="font-size:12px;color:var(--gold);font-weight:600">${fmtVal(l.value)}</div><div style="font-size:10px;color:var(--ts)">${fmtRelative(l.created_at)}</div></div>
       </div>`;
     });
     html += '</div></div>';
