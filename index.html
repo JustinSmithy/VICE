@@ -9,7 +9,9 @@
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Segoe UI',system-ui,sans-serif;background:#0a0c0f;color:#e8eaf0;min-height:100vh;overflow-y:auto}
-.pfbg{position:fixed;inset:0;z-index:-1;background-size:cover;background-position:center;pointer-events:none;display:none}
+.pfbg{position:fixed;inset:0;z-index:-1;background-size:cover;background-position:center;pointer-events:none;display:none;animation:kenBurns 25s ease-in-out infinite alternate;transform-origin:center center}
+@keyframes kenBurns{0%{transform:scale(1) translate(0,0)}100%{transform:scale(1.22) translate(-3%,-2%)}}
+@media(prefers-reduced-motion:reduce){.pfbg{animation:none}}
 .pfbg::after{content:'';position:fixed;inset:0;background:rgba(10,12,15,.65);z-index:-1;pointer-events:none}
 :root{
   --gold:#c9a84c;--gold-l:#e8c96a;
@@ -433,7 +435,7 @@ textarea.fi{resize:vertical;min-height:80px}
     <div class="sg">
       <div class="sc"><div class="sc-lbl">Total Drugs Seized</div><div class="sc-val gold" id="pub-weight">—</div></div>
       <div class="sc"><div class="sc-lbl">Firearms Seized</div><div class="sc-val red" id="pub-firearms">—</div></div>
-      <div class="sc"><div class="sc-lbl">Operations Run</div><div class="sc-val gold" id="pub-ops">—</div></div>
+      <div class="sc"><div class="sc-lbl">Seizures Logged</div><div class="sc-val gold" id="pub-ops">—</div></div>
       <div class="sc"><div class="sc-lbl">Arrest Rate</div><div class="sc-val green" id="pub-rate">—</div></div>
     </div>
     <div class="sec-hd"><div class="tag">Recent Seizure Logs</div><h2>Latest Enforcement Activity</h2></div>
@@ -5906,6 +5908,8 @@ async function openSuspectModal(suspectId) {
 
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
+    if ($('log-modal') && $('log-modal').style.display !== 'none') closeLogModal();
+    if ($('dispatch-modal') && $('dispatch-modal').style.display !== 'none') $('dispatch-modal').style.display = 'none';
     if ($('briefing-modal-overlay')?.style.display !== 'none') closeBriefingModal();
     if ($('suspect-modal-overlay')?.style.display !== 'none') closeSuspectModal();
     if ($('officer-modal-overlay')?.style.display !== 'none') closeOfficerProfile();
