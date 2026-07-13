@@ -977,7 +977,7 @@ textarea.fi{resize:vertical;min-height:80px}
         <button class="sb-btn" data-tab="download"><span class="sb-icon">⬇️</span>Download Client</button>
         <button class="sb-btn" data-tab="ops"><span class="sb-icon">📌</span>Operations</button>
         <button class="sb-btn" data-tab="activity"><span class="sb-icon">📅</span>Activity</button>
-        <button class="sb-btn admin-only" data-tab="users" style="display:none"><span class="sb-icon">👥</span>Manage Officers</button>
+        <button class="sb-btn admin-only" data-tab="users" style="display:none"><span class="sb-icon">👥</span>Manage Officers <span id="sb-users-badge" style="margin-left:auto;background:#f0685e;color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700;display:none"></span></button>
       </div>
       <div class="sb-div"></div>
       <div class="sb-lbl">Duty Status</div>
@@ -2065,6 +2065,20 @@ async function checkNotifications() {
     if (appsBadge) {
       if (pendingApps > 0) { appsBadge.textContent = pendingApps; appsBadge.style.display = ''; }
       else appsBadge.style.display = 'none';
+    }
+
+    // Pending officer verifications
+    const { data: pendingOffs } = await db().from('officers').select('id,verified').eq('verified', false);
+    const pendingCount = (pendingOffs||[]).length;
+    const usersBadge = $('sb-users-badge');
+    if (usersBadge) {
+      if (pendingCount > 0) { usersBadge.textContent = pendingCount; usersBadge.style.display = ''; }
+      else usersBadge.style.display = 'none';
+    }
+    // A toast on login if there are officers waiting to be verified
+    if (pendingCount > 0 && !window._verifyToastShown) {
+      window._verifyToastShown = true;
+      toast(pendingCount + ' officer' + (pendingCount!==1?'s':'') + ' awaiting verification', 'info', 6000);
     }
   }
   } catch(e) { /* session may have expired */ }
@@ -4452,7 +4466,17 @@ async function removeOfficer(id, name) {
   toast(`${name}'s officer record was removed.\n\nIf they need to re-register with the same email, delete their account in Supabase → Authentication → Users.`, 'ok');
   loadUsers();
 }
-async function verifyOfficer(id,name) { if(!confirm(`Verify ${name}?`))return; await db().from('officers').update({verified:true}).eq('id',id); loadUsers(); }
+async function verifyOfficer(id,name) { if(!confirm(`Verify ${name}?`))return; await db().from('officers').update({verified:true}).eq('id',id); toast(name + ' verified', 'ok'); refreshVerifyBadge(); loadUsers(); }
+
+async function refreshVerifyBadge() {
+  if (officer?.role !== 'admin') return;
+  try {
+    const { data } = await db().from('officers').select('id').eq('verified', false);
+    const n = (data||[]).length;
+    const b = $('sb-users-badge');
+    if (b) { if (n>0) { b.textContent = n; b.style.display=''; } else b.style.display='none'; }
+  } catch(e) {}
+}
 async function promoteOfficer(id,name) { if(!confirm(`Make ${name} an Admin?`))return; await db().from('officers').update({role:'admin'}).eq('id',id); loadUsers(); }
 
 // ═══════════════════════════════════════════════════
