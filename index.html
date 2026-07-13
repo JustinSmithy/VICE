@@ -353,6 +353,7 @@ textarea.fi{resize:vertical;min-height:80px}
 </head>
 <body>
 <div class="pfbg" id="pfbg" style="pointer-events:none;display:none"></div>
+<div class="dbg" id="dbg" style="pointer-events:none;display:none"></div>
 
 <nav>
   <div class="nb">
@@ -975,7 +976,7 @@ textarea.fi{resize:vertical;min-height:80px}
         <button class="sb-btn admin-only" data-tab="apps" style="display:none"><span class="sb-icon">📝</span>Applications <span id="sb-apps-badge" style="margin-left:auto;background:var(--gold);color:#0a0c0f;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700;display:none"></span></button>
         <button class="sb-btn" data-tab="download"><span class="sb-icon">⬇️</span>Download Client</button>
         <button class="sb-btn" data-tab="ops"><span class="sb-icon">📌</span>Operations</button>
-        <button class="sb-btn admin-only" data-tab="activity" style="display:none"><span class="sb-icon">📅</span>Activity</button>
+        <button class="sb-btn" data-tab="activity"><span class="sb-icon">📅</span>Activity</button>
         <button class="sb-btn admin-only" data-tab="users" style="display:none"><span class="sb-icon">👥</span>Manage Officers</button>
       </div>
       <div class="sb-div"></div>
@@ -1491,7 +1492,7 @@ textarea.fi{resize:vertical;min-height:80px}
         <!-- ═══════════ ACTIVITY TRACKER TAB ═══════════ -->
         <div class="tab-pane" id="tab-activity">
           <div style="margin-bottom:1.5rem"><h2 style="margin:0">Activity Scoreboard</h2><div style="color:var(--ts);font-size:13px;margin-top:2px">Weighted officer performance ranking across logs, arrests, operations &amp; dispatch</div></div>
-          <div id="oom-admin" style="background:rgba(201,168,76,.06);border:1px solid rgba(201,168,76,.25);border-radius:10px;padding:1rem 1.25rem;margin-bottom:1.25rem">
+          <div id="oom-admin" style="display:none;background:rgba(201,168,76,.06);border:1px solid rgba(201,168,76,.25);border-radius:10px;padding:1rem 1.25rem;margin-bottom:1.25rem">
             <div style="font-size:12px;letter-spacing:1px;text-transform:uppercase;color:var(--gold);font-weight:700;margin-bottom:.75rem">🏆 Officer of the Month (shown publicly)</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
               <div><label class="flbl">Officer</label><input class="fi" id="oom-in-name" placeholder="e.g. Justin Smithy" /></div>
@@ -1852,6 +1853,15 @@ function showPage(name) {
   if (pg) pg.classList.add('active');
   const bg = $('pfbg');
   if (bg) bg.style.display = (name === 'public') ? 'block' : 'none';
+  const dbg = $('dbg');
+  if (dbg) {
+    if (name === 'dash') {
+      if (!dbg.style.backgroundImage) dbg.style.backgroundImage = 'url(https://i.postimg.cc/2SsfBxqT/Chat-GPT-Image-Jul-12-2026-09-15-59-PM.png)';
+      dbg.style.display = 'block';
+    } else {
+      dbg.style.display = 'none';
+    }
+  }
   if (name === 'public') loadPublicStats();
   // Always restore scroll when navigating — modals may have locked it
   document.body.style.overflow = '';
